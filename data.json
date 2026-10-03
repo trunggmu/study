@@ -1,0 +1,26 @@
+{
+    "math": [
+        {
+            "question": "Căn bậc hai của 9?",
+            "options": [
+                "2",
+                "3",
+                "4",
+                "5"
+            ],
+            "answer": "3"
+        }
+    ],
+    "english": [
+        {
+            "question": "What is the capital of England?",
+            "options": [
+                "London",
+                "Paris",
+                "Hanoi",
+                "Tokyo"
+            ],
+            "answer": "London"
+        }
+    ]
+}
