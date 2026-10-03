@@ -434,7 +434,7 @@ $initialDataJson = json_encode($initialData, JSON_UNESCAPED_UNICODE);
         btn.disabled = true;
         btn.innerText = "ĐANG LƯU...";
 
-        fetch('save_score.php', {
+        fetch('save_bxh.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, ...finalResult })
