@@ -1,3 +1,9 @@
+<?php
+// Tự động nạp dữ liệu từ data.json thông qua functions.php để hiển thị danh sách ban đầu cho mượt mà
+require_once 'functions.php';
+$initialData = getAllData();
+$initialDataJson = json_encode($initialData, JSON_UNESCAPED_UNICODE);
+?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -262,18 +268,7 @@
 </div>
 
 <script>
-    // Dữ liệu mẫu khởi tạo mặc định nếu chưa có sẵn trong trình duyệt
-    const defaultData = {
-        "toan": [
-            {
-                "question": "Phương trình 2x - 4 = 0 có nghiệm là gì?",
-                "options": ["x = 1", "x = 2", "x = 3", "x = 4"],
-                "answer": "x = 2"
-            }
-        ]
-    };
-
-    let fullData = {};
+    let fullData = <?php echo $initialDataJson; ?>;
     let selectedKey = "";
     let userAns = {};
     let startTime, timer;
@@ -281,27 +276,15 @@
     let currentExamSeconds = 900;
 
     window.onload = () => {
-        loadDataFromStorage();
         loadMenu();
         loadBXH();
     };
 
-    function loadDataFromStorage() {
-        const saved = localStorage.getItem('trunggmu_quiz_data');
-        if (saved) {
-            try {
-                fullData = JSON.parse(saved);
-            } catch(e) {
-                fullData = defaultData;
-            }
-        } else {
-            fullData = defaultData;
-            localStorage.setItem('trunggmu_quiz_data', JSON.stringify(defaultData));
-        }
-    }
-
-    function saveDataToStorage() {
-        localStorage.setItem('trunggmu_quiz_data', JSON.stringify(fullData));
+    // Hàm gọi API đồng bộ dữ liệu mới nhất từ server (data.json)
+    async function fetchServerData() {
+        try {
+            const res = await fetch('get_data.php'); // Hoặc gọi file phụ tải data nếu cần, dưới đây ta reload lại trang sau khi thao tác
+        } catch(e) {}
     }
 
     function changeTime(amount) {
@@ -314,7 +297,6 @@
     }
 
     function loadMenu() {
-        loadDataFromStorage();
         const menu = document.getElementById('menu-json');
         menu.innerHTML = "";
         const keys = Object.keys(fullData);
@@ -338,7 +320,6 @@
             menu.appendChild(div);
         });
 
-        // Tự động chọn đề đầu tiên nếu chưa chọn
         if (!selectedKey && keys.length > 0) {
             selectedKey = keys[0];
             document.getElementById('selected-text').textContent = selectedKey.toUpperCase();
@@ -355,22 +336,23 @@
 
     function loadBXH() {
         const list = document.getElementById('lb-list');
-        const savedLB = localStorage.getItem('trunggmu_bxh');
-        if (!savedLB) {
-            list.innerHTML = "Chưa có dữ liệu BXH.";
-            return;
-        }
-        try {
-            const data = JSON.parse(savedLB);
-            list.innerHTML = data.map((p, i) => `
-                <div class="bxh-item">
-                    <span>#${i+1} ${p.name}</span>
-                    <span><b>${p.score}đ</b> (${p.time})</span>
-                </div>
-            `).join('') || "Chưa có dữ liệu.";
-        } catch (e) { 
-            list.innerHTML = "Chưa có dữ liệu BXH."; 
-        }
+        fetch('bxh.json')
+            .then(res => res.json())
+            .then(data => {
+                if (!Array.isArray(data) || data.length === 0) {
+                    list.innerHTML = "Chưa có dữ liệu BXH.";
+                    return;
+                }
+                list.innerHTML = data.map((p, i) => `
+                    <div class="bxh-item">
+                        <span>#${i+1} ${p.name}</span>
+                        <span><b>${p.score}đ</b> (${p.time})</span>
+                    </div>
+                `).join('');
+            })
+            .catch(() => {
+                list.innerHTML = "Chưa có dữ liệu BXH.";
+            });
     }
 
     function startExam() {
@@ -452,32 +434,33 @@
         btn.disabled = true;
         btn.innerText = "ĐANG LƯU...";
 
-        try {
-            let savedLB = localStorage.getItem('trunggmu_bxh');
-            let bxhData = savedLB ? JSON.parse(savedLB) : [];
-            
-            bxhData.push({ name, ...finalResult });
-            // Sắp xếp theo điểm cao xuống thấp, thời gian thấp lên cao
-            bxhData.sort((a, b) => b.score - a.score || a.rawTime - b.rawTime);
-            // Giữ lại top 10
-            bxhData = bxhData.slice(0, 10);
-
-            localStorage.setItem('trunggmu_bxh', JSON.stringify(bxhData));
-            
-            alert("Đã lưu kết quả thành công!");
-            location.reload();
-        } catch (error) {
-            alert("Lỗi khi lưu kết quả!");
+        fetch('save_score.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, ...finalResult })
+        })
+        .then(res => res.json())
+        .then(response => {
+            if(response.status === 'success') {
+                alert("Đã lưu kết quả thành công lên bảng xếp hạng!");
+                location.reload();
+            } else {
+                alert("Lỗi: " + (response.message || "Không thể lưu điểm"));
+                btn.disabled = false;
+                btn.innerText = "LƯU KẾT QUẢ";
+            }
+        })
+        .catch(() => {
+            alert("Lỗi kết nối đến server!");
             btn.disabled = false;
             btn.innerText = "LƯU KẾT QUẢ";
-        }
+        });
     }
 
     // --- ADMIN FUNCTIONS ---
     function openAdmin() {
         document.getElementById('setup-screen').classList.remove('active');
         document.getElementById('admin-screen').classList.add('active');
-        loadMenu();
         renderAdminList();
     }
 
@@ -501,7 +484,6 @@
     }
 
     function renderAdminList() {
-        loadDataFromStorage();
         const container = document.getElementById('admin-quiz-list');
         let html = "";
         const keys = Object.keys(fullData);
@@ -552,42 +534,30 @@
         const opt1 = document.getElementById('admin-opt1').value.trim();
         const opt2 = document.getElementById('admin-opt2').value.trim();
         const opt3 = document.getElementById('admin-opt3').value.trim();
-        const answerChar = document.getElementById('admin-answer').value;
+        const answer = document.getElementById('admin-answer').value;
 
         if (!category || !question) return alert("Vui lòng nhập chuyên mục và nội dung câu hỏi!");
 
-        let answerVal = opt0;
-        if(answerChar === 'B') answerVal = opt1;
-        if(answerChar === 'C') answerVal = opt2;
-        if(answerChar === 'D') answerVal = opt3;
+        const formData = new URLSearchParams();
+        formData.append('action', 'save_question');
+        formData.append('category', category);
+        formData.append('question_id', question_id);
+        formData.append('question', question);
+        formData.append('opt0', opt0);
+        formData.append('opt1', opt1);
+        formData.append('opt2', opt2);
+        formData.append('opt3', opt3);
+        formData.append('answer', answer);
 
-        const newQ = {
-            question: question,
-            options: [opt0, opt1, opt2, opt3],
-            answer: answerVal
-        };
-
-        if (!fullData[category]) {
-            fullData[category] = [];
-        }
-
-        if (question_id !== "" && !isNaN(question_id)) {
-            fullData[category][parseInt(question_id)] = newQ;
-        } else {
-            fullData[category].push(newQ);
-        }
-
-        saveDataToStorage();
-        alert("Đã lưu câu hỏi thành công!");
-        
-        document.getElementById('edit-q-id').value = '';
-        document.getElementById('admin-question').value = '';
-        document.getElementById('admin-opt0').value = '';
-        document.getElementById('admin-opt1').value = '';
-        document.getElementById('admin-opt2').value = '';
-        document.getElementById('admin-opt3').value = '';
-
-        renderAdminList();
+        fetch('process.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(() => {
+            alert("Đã lưu câu hỏi vào file data.json thành công!");
+            location.reload(); // Tải lại để cập nhật mảng dữ liệu mới nhất từ server
+        })
+        .catch(() => alert("Lỗi khi lưu câu hỏi!"));
     }
 
     function saveByJSONRaw() {
@@ -596,34 +566,46 @@
 
         if (!category) return alert("Vui lòng nhập tên chuyên mục (môn thi)!");
         
-        let parsedQuestions;
         try {
-            parsedQuestions = JSON.parse(rawJsonText);
-            if (!Array.isArray(parsedQuestions)) throw new Error();
+            const parsed = JSON.parse(rawJsonText);
+            if (!Array.isArray(parsed)) throw new Error();
         } catch (e) {
             return alert("Định dạng JSON không hợp lệ! Hãy chắc chắn bạn nhập đúng mảng câu hỏi dạng [...]");
         }
 
-        fullData[category] = parsedQuestions;
-        saveDataToStorage();
+        const formData = new URLSearchParams();
+        formData.append('action', 'save_json_bulk');
+        formData.append('category', category);
+        formData.append('questions_json', rawJsonText);
 
-        alert("Đã cập nhật danh sách câu hỏi qua JSON thành công!");
-        document.getElementById('json-raw-input').value = '';
-        renderAdminList();
-        switchTab('form');
+        fetch('process.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(() => {
+            alert("Đã cập nhật danh sách câu hỏi qua JSON thành công!");
+            location.reload();
+        })
+        .catch(() => alert("Lỗi khi cập nhật JSON!"));
     }
 
     function deleteQuestion(cat, idx) {
         if (!confirm("Bạn có chắc chắn muốn xóa câu hỏi này?")) return;
 
-        if (fullData[cat]) {
-            fullData[cat].splice(idx, 1);
-            if (fullData[cat].length === 0) {
-                delete fullData[cat];
-            }
-            saveDataToStorage();
-            renderAdminList();
-        }
+        const formData = new URLSearchParams();
+        formData.append('action', 'delete');
+        formData.append('category', cat);
+        formData.append('question_id', idx);
+
+        fetch('process.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(() => {
+            alert("Đã xóa câu hỏi thành công!");
+            location.reload();
+        })
+        .catch(() => alert("Lỗi khi xóa câu hỏi!"));
     }
 </script>
 </body>
